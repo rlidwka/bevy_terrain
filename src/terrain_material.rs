@@ -1,75 +1,42 @@
+use bevy::pbr::{MaterialPipeline, MaterialPipelineKey};
 use bevy::prelude::*;
-use bevy::{
-    reflect::TypeUuid,
-    render::{
-        pipeline::{PipelineDescriptor},
-        render_graph::{base, AssetRenderResourcesNode, RenderGraph},
-        renderer::RenderResources,
-        shader::{ShaderStage, ShaderStages},
-    },
+use bevy::render::mesh::{MeshVertexAttribute, MeshVertexBufferLayoutRef};
+use bevy::render::render_resource::{
+    AsBindGroup, RenderPipelineDescriptor, ShaderRef, SpecializedMeshPipelineError, VertexFormat,
 };
 
-#[derive(RenderResources, Default, TypeUuid)]
-#[uuid = "0320b9b8-b3a3-4baa-8bfa-c94008177b17"]
+const SHADER_ASSET_PATH: &str = "shaders/terrain_shader.wgsl";
+
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 pub struct TerrainMaterial {
+    #[uniform(0)]
+    pub color: LinearRgba,
 }
 
 impl TerrainMaterial {
-    pub const ATTRIBUTE_COLOR: &'static str = "Vertex_Color";
+    pub const ATTRIBUTE_COLOR: MeshVertexAttribute =
+        MeshVertexAttribute::new("Vertex_Color", 7642011322398579, VertexFormat::Float32x3);
 }
 
-const VERTEX_SHADER: &str = r#"
-#version 450
-layout(location = 0) in vec3 Vertex_Position;
-layout(location = 1) in vec3 Vertex_Color;
-layout(location = 0) out vec3 v_color;
-layout(set = 0, binding = 0) uniform Camera {
-    mat4 ViewProj;
-};
-layout(set = 1, binding = 0) uniform Transform {
-    mat4 Model;
-};
-void main() {
-    gl_Position = ViewProj * Model * vec4(Vertex_Position, 1.0);
-    v_color = Vertex_Color;
-}
-"#;
+impl Material for TerrainMaterial {
+    fn vertex_shader() -> ShaderRef {
+        SHADER_ASSET_PATH.into()
+    }
+    fn fragment_shader() -> ShaderRef {
+        SHADER_ASSET_PATH.into()
+    }
 
-const FRAGMENT_SHADER: &str = r#"
-#version 450
-layout(location = 0) out vec4 o_Target;
-layout(location = 0) in vec3 v_color;
-void main() {
-    o_Target = vec4(v_color, 1.0);
-    // o_Target = vec4(1.0, 1.0, 1.0, 1.0);
-}
-"#;
-
-pub fn add_terrain_material(
-    mut pipelines: ResMut<Assets<PipelineDescriptor>>,
-    mut shaders: ResMut<Assets<Shader>>,
-    mut render_graph: ResMut<RenderGraph>
-) -> Handle<PipelineDescriptor> {
-
-        // Create a new shader pipeline
-    let pipeline_handle = pipelines.add(PipelineDescriptor::default_config(ShaderStages {
-        vertex: shaders.add(Shader::from_glsl(ShaderStage::Vertex, VERTEX_SHADER)),
-        fragment: Some(shaders.add(Shader::from_glsl(ShaderStage::Fragment, FRAGMENT_SHADER))),
-    }));
-
-    // Add an AssetRenderResourcesNode to our Render Graph. This will bind TerrainMaterial resources to our shader
-    render_graph.add_system_node(
-        "my_material_with_vertex_color_support",
-        AssetRenderResourcesNode::<TerrainMaterial>::new(true),
-    );
-
-    // Add a Render Graph edge connecting our new "my_material" node to the main pass node. This ensures "my_material" runs before the main pass
-    render_graph
-        .add_node_edge(
-            "my_material_with_vertex_color_support",
-            base::node::MAIN_PASS,
-        )
-        .unwrap();
-
-    pipeline_handle
+    fn specialize(
+        _pipeline: &MaterialPipeline<Self>,
+        descriptor: &mut RenderPipelineDescriptor,
+        layout: &MeshVertexBufferLayoutRef,
+        _key: MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        let vertex_layout = layout.0.get_layout(&[
+            Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
+            TerrainMaterial::ATTRIBUTE_COLOR.at_shader_location(1),
+        ])?;
+        descriptor.vertex.buffers = vec![vertex_layout];
+        Ok(())
+    }
 }
